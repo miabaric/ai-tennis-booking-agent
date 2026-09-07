@@ -38,7 +38,7 @@ A single n8n workflow ties these together: an incoming WhatsApp message triggers
 
 | Choosing a day | Choosing a time | Confirmation |
 |---|---|---|
-| ![days](/screenshots/days.jpg) | ![hours](/screenshots/hours.jpg) | ![confirm](/screenshots/confirm.jpg) |
+| ![days](screenshots/days.jpg) | ![hours](screenshots/hours.jpg) | ![confirm](screenshots/confirm.jpg) |
 
 ## Repository contents
 
