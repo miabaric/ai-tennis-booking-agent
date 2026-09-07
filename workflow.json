@@ -1,0 +1,903 @@
+{
+  "name": "Prenotazione campo da tennis",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -592,
+        144
+      ],
+      "id": "b97880de-e3bf-4840-9c12-8288e4557a2f",
+      "name": "WhatsApp Trigger",
+      "webhookId": "YOUR_WEBHOOK_ID",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "K8EnO0IJ3dMsBqQY",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        448
+      ],
+      "id": "6191f35f-f674-477f-9759-b30ef4a6d761",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "NUHB6DYZnkOfTi6a",
+          "name": "Google Gemini(PaLM) Api account main"
+        }
+      },
+      "notes": "CRITICAL RULE:\nIt is VERY IMPORTANT that you do all the tasks and tools required as it is written because if you skip something the user does not get a response."
+    },
+    {
+      "parameters": {
+        "toolDescription": "Makes an HTTP request and returns a whatsapp template with a menu.",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{$json[\"messages\"][0][\"from\"]}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"Ciao! Cosa vorresti fare con le prenotazioni?\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"crea\",\n            \"title\": \"Crea una nuova\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"visualizza\",\n            \"title\": \"Visualizza\"\n          }\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        32,
+        448
+      ],
+      "id": "95bc2941-a8a5-40c0-b480-eace3c4bca31",
+      "name": "Menu principale"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=={{ $json.contacts[0].wa_id }}",
+        "contextWindowLength": 30
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -112,
+        448
+      ],
+      "id": "715a7d77-2f19-4d1c-bf29-d0697d8a399f",
+      "name": "Memoria semplice",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{\n$json[\"messages\"]?.[0]?.interactive?.button_reply?.id\n?? $json[\"messages\"]?.[0]?.interactive?.list_reply?.id\n}}",
+        "options": {
+          "systemMessage": "=You are a helpful AI assistant for managing tennis court bookings.\n\n# You have access to these tools:\n1) Tool Menu principale: sends a menu to the user.\n2) Tool Raccogli eventi settimana prima: retrieves events from Google Calendar from today for the next week.\n3) Tool Menu giorni prima: sends the user an interactive list with available days and other options.\n4) Tool Raccogli eventi settimana dopo: retrieves events from Google Calendar for the week after the current one.\n5) Tool Menu giorni dopo: sends the user an interactive list with available days and other options.\n6) Tool Raccogli eventi giorno: retrieves events from Google Calendar for the selected day.\n7) Tool Menu ore mattina: sends the user an interactive list with available hours and other options.\n8) Tool Menu ore pomeriggio: sends the user an interactive list with available hours and other options.\n9) Tool Crea evento: creates an event for the user.\n10) Tool Messaggio prenotazione: sends the user a confirmation that the event has been created.\n11) Tool Raccogli eventi utente: retrieves events from Google Calendar of the user.\n12) Tool Menu prenotazioni utente: sends the user an interactive list with his reservations and other option.\n13) Tool Menu modifica cancella: sends a menu to the user.\n14) Tool Cancella evento: deletes an event.\n15) Tool Messaggio cancellazione: sends the user a confirmation that the event has been deleted.\n16) Tool Messaggio modifica: send the user a confirmation that the event has been replaced.\n\nThe current time and date is the following Italian Time Zone: {{ $now }}.\n\n# SYSTEM RULES - IMPORTANT:\nIt is VERY IMPORTANT that you do all the tasks and tools required as it is written because if you skip something the user does not get a response.\nThe format of [date] or [old_date] or [new_date] MUST be DDMMYYYY. The format of [date_time] or [old_date_time] or [new_date_time] MUST be DDMMYYYYHH.\n\n# TASKS:\n- If the user clicked \"menu_principale\", \nuse the Menu principale tool so the user can decide what to do next.\n\n- If the user clicked \"crea\" or \"settimana_prima\", \nuse the tool Raccogli eventi settimana prima to get events, \nthen check those events and send to Menu giorni prima all days from today to {{ $now.startOf('day').plus({ week: 1 }).minus({ day: 1 }).set({ hour: 22, minute: 0, second: 0 }) }} that have at least one available slot without events. (the slots go from 8:00 to 22:00, so the last slot to check is 21:00-22:00, and each slot is one hour long) in this format: Mercoledì GG/MM. In addition to the list of days, you must ALWAYS include exactly two additional objects in this order: the first one with id=settimana_dopo and title=Settimana dopo and the second one with id=menu_principale and title=Menu principale. These two options must ALWAYS be present, even if the list of days is empty or contains only one item. Timezone is Europe/Rome.\n\n- If the user clicked \"modify_[old_date_time]_settimana_prima\", \nuse the tool Raccogli eventi settimana prima to get events,\nthen check those events and send to Menu giorni prima days from today to {{ $now.startOf('day').plus({ week: 1 }).minus({ day: 1 }).set({ hour: 22, minute: 0, second: 0 }) }} that have at least one available slot without events (the slots go from 8:00 to 22:00, so the last slot to check is 21:00-22:00, and each slot is one hour long) in this format: Mercoledì GG/MM and id=modify_[old_date_time]_ore_mattina_[new_date]. For today, check the slots starting from {{ $now.plus({ hour: 1 }).startOf('hour') }} and if its already past 21:00, check from tommorow. In addition to the list of days, you must ALWAYS include exactly two additional objects in this order: the first one with id=modify_[old_date_time]_settimana_dopo and title=Settimana dopo and the second one with id=menu_principale and title=Menu principale. These two options must ALWAYS be present, even if the list of days is empty or contains only one item. Timezone is Europe/Rome.\n\n- If the user clicked \"settimana_dopo\", \nuse the tool Raccogli eventi settimana dopo to get events,\nthen check those events and send to Menu giorni dopo days from {{ $now.startOf('day').plus({ week: 1 }) }} to {{ $now.startOf('day').plus({ week: 2 }).minus({ day: 1 }).set({ hour: 22, minute: 0, second: 0 }) }} that have at least one available slot without events (the slots go from 8:00 to 22:00, so the last slot to check is 21:00-22:00, and each slot is one hour long) in this format: Mercoledì GG/MM. In addition to the list of days, you must ALWAYS include exactly two additional objects in this order: the first one with id=settimana_prima and title=Settimana prima and the second one with id=menu_principale and title=Menu principale. These two options must ALWAYS be present, even if the list of days is empty or contains only one item. Timezone is Europe/Rome.\n\n- If the user clicked \"modify_[old_date_time]_settimana_dopo\", \nuse the tool Raccogli eventi settimana dopo to get events,\nthen check those events and send to Menu giorni dopo days from {{ $now.startOf('day').plus({ week: 1 }) }} up to {{ $now.startOf('day').plus({ week: 2 }).minus({ day: 1 }).set({ hour: 22, minute: 0, second: 0 }) }} that have at least one available slot without events (the slots go from 8:00 to 22:00, so the last slot to check is 21:00-22:00, and each slot is one hour long) in this format: Mercoledì GG/MM and id=modify_[old_date_time]_ore_mattina_[new_date]. In addition to the list of days, you must ALWAYS include exactly two additional objects in this order: the first one with id=modify_[old_date_time]_settimana_prima and title=Settimana prima and the second one with id=menu_principale and title=Menu principale. These two options must ALWAYS be present, even if the list of days is empty or contains only one item. Timezone is Europe/Rome.\n\n- If the user clicked \"[date]\" or the user clicked \"ore_mattina_[date]\", \nuse the tool Raccogli eventi giorno to get events, \nthen check those events and send to Menu ore mattina all available slots from 8:00 to 15:00 (the last slot to check is 14:00-15:00) of the selected day that don't have an event scheduled, in this format: 8:00-9:00 (each slot is one hour long). In addition to the list of hours, you must ALWAYS include exactly three additional objects: the first one with id=ore_pomeriggio_[date] and title=Pomeriggio, the second one with id=settimana_prima and title=Cambia giorno, and the third one with id=menu_principale and title=Menu principale. If the list of hours is empty, send just the additional three objects. Timezone is Europe/Rome.\n\n- If the user clicked \"modify_[old_date_time]_ore_mattina_[new_date]\", \nuse the tool Raccogli eventi giorno to get events with new date, \nthen check those events and send to Menu ore mattina all available slots from 8:00 to 15:00 (the last slot to check is 14:00-15:00) of the new selected day that don't have an event scheduled, in this format: 8:00-9:00 (each slot is one hour long) and id=modify_[old_date_time]_[new_date_time]. In addition to the list of hours, you must ALWAYS include exactly three additional objects: the first one with id=modify_[old_date_time]_ore_pomeriggio_[new_date] and title=Pomeriggio, the second one with id=modify_[old_date_time]_settimana_prima and title=Cambia giorno, and the third one with id=menu_principale and title=Menu principale. If the list of hours is empty, send just the additional three objects. Timezone is Europe/Rome.\n\n- If the user clicked \"ore_pomeriggio_[date]\", \nuse the tool Raccogli eventi giorno to get events, \nthen check those events and send to Menu ore pomeriggio all available slots from 15:00 to 22:00 (the last slot to check is 21:00-22:00) of the selected day that don't have an event scheduled, in this format: 15:00-16:00 (each slot is one hour long). In addition to the list of hours, you must ALWAYS include exactly three additional objects: the first one with id=ore_mattina_[date] and title=Mattina, the second one with id=settimana_prima and title=Cambia giorno, and the third one with id=menu_principale and title=Menu principale. If the list of hours is empty, send just the additional three objects. Timezone is Europe/Rome.\n\n- If the user clicked \"modify_[old_date_time]_ore_pomeriggio_[new_date]\", \nuse the tool Raccogli eventi giorno to get events with new date, \nthen check those events and send to Menu ore pomeriggio all available slots from 15:00 to 22:00 (the last slot to check is 21:00-22:00) of the new selected day that don't have an event scheduled, in this format: 15:00-16:00 (each slot is one hour long) and id=modify_[old_date_time]_[new_date_time]. In addition to the list of hours, you must ALWAYS include exactly three additional objects: the first one with id=modify_[old_date_time]_ore_mattina_[new_date] and title=Mattina, the second one with id=modify_[old_date_time]_settimana_prima and title=Cambia giorno, and the third one with id=menu_principale and title=Menu principale. If the list of hours is empty, send just the additional three objects. Timezone is Europe/Rome.\n\n- If the user clicked \"[date_time]\",\nthen use the tool Crea evento to create a new event in Google Calendar for the user with the selected day and time in ISO 8601 format (the event is always one hour long and starts exactly at HH:00),\nthen use the tool Messaggio prenotazione to send a confirmation message to the user. Timezone is Europe/Rome.\n\n- If the user clicked \"modify_[old_date_time]_[new_date_time]\",\nthen use the tool Crea evento to create a new event in Google Calendar for the user with the new date and time in ISO 8601 format (the event is always one hour long and starts exactly at HH:00),\nthen use the tool Cancella evento to delete the event with the old date and time in Google Calendar,\nthen use the tool Messaggio modifica to send a message to the user confirming the modification, including the old event and the new date and time. Timezone is Europe/Rome.\n\n- If the user clicked \"visualizza\",\nuse the tool Raccogli eventi utente to get events,\nthen send those events to Menu prenotazioni utente in this format: DD/MM/YYYY HH:00-HH:00 (ev ery event is one hour long). In addition to the list of days, you must ALWAYS include exactly one additional object: id=menu_principale and title=Menu principale. This option must ALWAYS be present, even if the list of events is empty or contains only one item. Timezone is Europe/Rome.\n\n- If the user clicked \"u_[date_time]\",\nuse the Menu modifica cancella tool so the user can decide what do to next.\n\n- If the user clicked \"modify_[date_time]\", \nyou are now modifying users event, \nuse the tool Raccogli eventi giorno using only the date to get events, \nthen check those events and send to Menu ore mattina all available slots from 8:00 to 15:00 (the last slot to check is 14:00-15:00) of the selected day that don't have an event scheduled, in this format: 8:00-9:00 (each slot is one hour long) with the id=modify_[old_date_time]_[new_date_time]. In addition to the list of hours, you must ALWAYS include exactly three additional objects: the first one with id=modify_[old_date_time]_ore_pomeriggio_[new_date] and title=Pomeriggio, the second one with id=modify_[old_date_time]_settimana_prima and title=Cambia giorno, and the third one with id=menu_principale and title=Menu principale. If the list of hours is empty, send just the additional three objects. Timezone is Europe/Rome.\n\n-If the user clicked \"c_[date_time]\",\nuse the tool Cancella evento to delete the event from Google Calendar,\nthen use the tool Messaggio cancellazione to send a confirmation message to the user."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -48,
+        208
+      ],
+      "id": "44fb4afa-b65d-4b7a-87db-8c1673c32589",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_ID@group.calendar.google.com",
+          "mode": "list",
+          "cachedResultName": "Campo tennis"
+        },
+        "start": "={{ $fromAI(\"start\",\"new date and time selected from the user in ISO 8601 format\") }}",
+        "end": "={{ $fromAI(\"end\",\"new date and time selected from the user in ISO 8601 format\") }}",
+        "additionalFields": {
+          "id": "={{ $fromAI('ID', 'format:DDMMYYYYHH od the nwe date') }}",
+          "summary": "={{ $('WhatsApp Trigger').item.json.contacts[0].profile.name + ' - ' + $json.contacts[0].wa_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        944,
+        448
+      ],
+      "id": "b13bed86-837b-48a9-95e8-c33d681282d0",
+      "name": "Crea evento",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "a3HEgogOE18MHcVI",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Makes an HTTP request and returns a whatsapp template with users reservations and one additional button to complete the template.",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{ $('WhatsApp Trigger').item.json.contacts[0].wa_id }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"list\",\n    \"body\": {\n      \"text\": \"Ecco le tue prenotazioni!\"\n    },\n    \"action\": {\n      \"button\": \"Le tue prenotazioni\",\n      \"sections\": [\n        {\n          \"title\": \"Le tue prenotazioni\",\n          \"rows\": {{ JSON.stringify($fromAI('rows', 'the output of Raccogli eventi utente must be formatted as rows with id and title for the WhatsApp interactive list template. The id should be u_[date_time]. In addition to the list of events, you must ALWAYS include exactly one additional button: id=menu_principale and title=Menu principale. This option must ALWAYS be present, even if the list of events is empty or contains only one item','json')) }}\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        608
+      ],
+      "id": "62218a32-9cc5-4327-8c65-ebc577e00926",
+      "name": "Menu prenotazioni utente"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_ID@group.calendar.google.com",
+          "mode": "list",
+          "cachedResultName": "Campo tennis"
+        },
+        "eventId": "={{ $fromAI('ID', 'format:DDMMYYYYHH') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        1712,
+        448
+      ],
+      "id": "21a41d5f-5f3b-4352-b635-23eb76b9238d",
+      "name": "Cancella evento",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "a3HEgogOE18MHcVI",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Makes an HTTP request and returns a whatsapp template with available hours to make an appointment and additional three buttons to complete the template.",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{ $('WhatsApp Trigger').item.json.contacts[0].wa_id }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"list\",\n    \"body\": {\n      \"text\": \"Ore disponibili il {{ $fromAI('date','format: DD/MM/YYYY') }}\"\n    },\n    \"action\": {\n      \"button\": \"Scegli un'ora:\",\n      \"sections\": [\n        {\n          \"title\": \"Ore disponibili\",\n          \"rows\": {{ JSON.stringify($fromAI('rows', 'the output of Raccogli eventi mattina must be formatted as rows with id and title for the WhatsApp interactive list template. In addition to the list of hours, you must ALWAYS include exactly three additional buttons: the first one with title=Pomeriggio, the second one with title=Cambia giorno, and the third one with id=menu_principale and title=Menu principale. These three options must ALWAYS be present, even if the list of hours is empty or contains only one item','json')) }}\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        608
+      ],
+      "id": "e63b096e-7aca-4ca6-a7f4-546be48972f9",
+      "name": "Menu ore mattina"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Makes an HTTP request and returns a whatsapp template with available hours to make an appointment and additional three buttons to complete the template.",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{ $('WhatsApp Trigger').item.json.contacts[0].wa_id }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"list\",\n    \"body\": {\n      \"text\": \"Ore disponibili il {{ $fromAI('date','format: DD/MM/YYYY') }}\"\n    },\n    \"action\": {\n      \"button\": \"Scegli un'ora:\",\n      \"sections\": [\n        {\n          \"title\": \"Ore disponibili\",\n          \"rows\": {{ JSON.stringify($fromAI('rows', 'the output of Raccogli eventi pomeriggio must be formatted as rows with id and title for the WhatsApp interactive list template. In addition to the list of hours, you must ALWAYS include exactly three additional buttons: the first one with title=Mattina, the second one with title=Cambia giorno, and the third one with id=menu_principale and title=Menu principale. These three options must ALWAYS be present, even if the list of hours is empty or contains only one item','json')) }}\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        768,
+        608
+      ],
+      "id": "3b2c9667-100a-462f-b181-572c2bb26470",
+      "name": "Menu ore pomeriggio"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Makes an HTTP request and returns a whatsapp template with all the available days to make an appointment and additional two buttons to complete the template.",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{ $('WhatsApp Trigger').item.json.contacts[0].wa_id }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"list\",\n    \"body\": {\n      \"text\": \"Ecco i giorni disponibili!\"\n    },\n    \"action\": {\n      \"button\": \"Scegli un giorno:\",\n      \"sections\": [\n        {\n          \"title\": \"Giorni disponibili\",\n          \"rows\": {{ JSON.stringify($fromAI('rows', 'all the days with at least one slot available that must be formatted as rows with id and title for the WhatsApp interactive list template. In addition to the list of days, you must ALWAYS include exactly two additional buttons: the first one with title=Settimana dopo and the second one with title=Menu principale. These two options must ALWAYS be present, even if the list of days is empty or contains only one item','json')) }}\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        608
+      ],
+      "id": "42821f40-41a4-4ab5-983d-3ca95c7632cd",
+      "name": "Menu giorni prima"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Makes an HTTP request and returns a whatsapp template with available days to make an appointment and additional two buttons to complete the template.",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{ $('WhatsApp Trigger').item.json.contacts[0].wa_id }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"list\",\n    \"body\": {\n      \"text\": \"Ecco i giorni disponibili!\"\n    },\n    \"action\": {\n      \"button\": \"Scegli un giorno:\",\n      \"sections\": [\n        {\n          \"title\": \"Giorni disponibili\",\n          \"rows\": {{ JSON.stringify($fromAI('rows', 'the output of Raccogli eventi settimana dopo must be formatted as rows with id and title for the WhatsApp interactive list template. In addition to the list of days, you must ALWAYS include exactly two additional buttons: the first one with title=Settimana prima and the second one with id=menu_principale and title=Menu principale. These two options must ALWAYS be present, even if the list of days is empty or contains only one item','json')) }}\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        432,
+        608
+      ],
+      "id": "a802b525-9496-465f-8119-40eb24b0a393",
+      "name": "Menu giorni dopo"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_ID@group.calendar.google.com",
+          "mode": "list",
+          "cachedResultName": "Campo tennis"
+        },
+        "limit": 100,
+        "timeMin": "={{ $now.plus({ hour: 1 }).startOf('hour') }}",
+        "timeMax": "={{ $now.startOf('day').plus({ week: 1 }) }}",
+        "options": {
+          "fields": "items(start(dateTime),end(dateTime))",
+          "orderBy": "startTime"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        224,
+        448
+      ],
+      "id": "6968d4a2-c7a4-433e-9fb3-bdabbb5a64e9",
+      "name": "Raccogli eventi settimana prima",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "a3HEgogOE18MHcVI",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_ID@group.calendar.google.com",
+          "mode": "list",
+          "cachedResultName": "Campo tennis"
+        },
+        "limit": 100,
+        "timeMin": "={{ $now.startOf('day').plus({ week: 1 }) }}",
+        "timeMax": "={{ $now.startOf('day').plus({ week: 2 }).minus({ day: 1 }).set({ hour: 22, minute: 0, second: 0 }) }}",
+        "options": {
+          "fields": "items(start(dateTime),end(dateTime))",
+          "orderBy": "startTime"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        432,
+        448
+      ],
+      "id": "fbde90f6-35bd-4026-b599-d758e88f2b57",
+      "name": "Raccogli eventi settimana dopo",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "a3HEgogOE18MHcVI",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_ID@group.calendar.google.com",
+          "mode": "list",
+          "cachedResultName": "Campo tennis"
+        },
+        "limit": 20,
+        "timeMin": "={{$fromAI('date_start','8:00 of the selected date in ISO 8601 format')}}",
+        "timeMax": "={{$fromAI('date_finish','22:00 of the selected date in ISO 8601 format')}}",
+        "options": {
+          "fields": "items(start(dateTime),end(dateTime))",
+          "orderBy": "startTime"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        640,
+        448
+      ],
+      "id": "20975b76-7854-41d1-9759-7e4bc6073934",
+      "name": "Raccogli eventi giorno",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "a3HEgogOE18MHcVI",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Makes an HTTP request and returns the confirmation text.",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{ $json.contacts[0].wa_id }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"La tua nuova prenotazione è {{$fromAI('date_time','format: DD/MM/YYYY HH:00-HH:00')}}.\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        944,
+        608
+      ],
+      "id": "5eb6bcd9-3e0a-4ed2-94f8-744170d76adf",
+      "name": "Messaggio prenotazione"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_ID@group.calendar.google.com",
+          "mode": "list",
+          "cachedResultName": "Campo tennis"
+        },
+        "limit": 100,
+        "timeMax": "={{ $now.startOf('day').plus({ week: 2 }).minus({ day: 1 }).set({ hour: 22, minute: 0, second: 0 }) }}",
+        "options": {
+          "fields": "items(summary, start(dateTime),end(dateTime))",
+          "orderBy": "startTime",
+          "query": "={{ $json.contacts[0].wa_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        1280,
+        448
+      ],
+      "id": "8b799a31-4aff-4742-9e29-8189a4a955f0",
+      "name": "Raccogli eventi utente",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "a3HEgogOE18MHcVI",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Makes an HTTP request and returns a whatsapp template with a menu.",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{ $json.contacts[0].wa_id }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"Cosa vorresti fare con la prenotazione di {{$fromAI('date_time','format: DD/MM/YYYY HH:00-HH:00')}}?\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"{{$fromAI('m_date','format: modify_[date_time]')}}\",\n            \"title\": \"Modifica\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"{{$fromAI('c_date_time','format: c_[date_time]')}}\",\n            \"title\": \"Cancella\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"menu_principale\",\n            \"title\": \"Menu principale\"\n          }\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        1504,
+        448
+      ],
+      "id": "f99cd2a5-1727-4bee-a500-0c9e7a160142",
+      "name": "Menu modifica cancella"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Makes an HTTP request and returns the confirmation text.",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{ $json.contacts[0].wa_id }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"La prenotazione di {{$fromAI('date_time','format: DD/MM/YYYY HH:00-HH:00')}} è stata cancellata.\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        608
+      ],
+      "id": "61befde3-606d-436f-9a74-d0b2af2bad10",
+      "name": "Messaggio cancellazione"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "709bafc5-5e53-4d08-8a6c-841353a9ac4d",
+              "leftValue": "={{ $json.messages[0].interactive.button_reply }}",
+              "rightValue": "=interactive",
+              "operator": {
+                "type": "object",
+                "operation": "exists",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "addb21ce-aa66-4f54-a460-e62058dfac0b",
+              "leftValue": "={{ $json.messages[0].interactive.list_reply }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -336,
+        144
+      ],
+      "id": "a4940878-7824-4ac6-a908-e1a853f76a39",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{$json[\"messages\"][0][\"from\"]}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"Ciao! Cosa vorresti fare con le prenotazioni?\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"crea\",\n            \"title\": \"Crea una nuova\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"visualizza\",\n            \"title\": \"Visualizza\"\n          }\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "bde08eee-a9a5-4ade-ad2d-76ed0f6f199c",
+      "name": "Risposta generale"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Makes an HTTP request and returns the confirmation text.",
+        "method": "POST",
+        "url": "https://graph.facebook.com/v20.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_WHATSAPP_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"={{ $json.contacts[0].wa_id }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"La prenotazione di {{$fromAI('past_event','m_[date_time] from previous messages in format: DD/MM/YYYY HH:00-HH:00')}} è stata cambiata in {{$fromAI('date_time','format: DD/MM/YYYY HH:00-HH:00')}}.\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        1072,
+        608
+      ],
+      "id": "51518d1c-79f8-42c0-9197-b69011b2f338",
+      "name": "Messaggio modifica"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Menu principale": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memoria semplice": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crea evento": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Menu prenotazioni utente": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancella evento": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Menu ore mattina": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Menu ore pomeriggio": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Menu giorni prima": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Menu giorni dopo": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Raccogli eventi settimana prima": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Raccogli eventi settimana dopo": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Raccogli eventi giorno": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Messaggio prenotazione": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Raccogli eventi utente": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Menu modifica cancella": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Messaggio cancellazione": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Risposta generale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Messaggio modifica": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "5e83c455-a8f1-4b61-b1d3-dbc33cae166d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "id": "HVZJzlzNHkJXQiC5",
+  "tags": []
+}
